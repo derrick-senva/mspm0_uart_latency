@@ -40,19 +40,74 @@
 /* Standard includes */
 #include <stdio.h>
 
-/* POSIX header files */
-#include <unistd.h>
+// RTOS header files
+#include <FreeRTOS.h>
+#include <portmacro.h>
+#include <semphr.h>
 
 /* TI includes for driver configuration */
 #include "ti_msp_dl_config.h"
+#include <ti/drivers/dpl/HwiP.h>
 
-/* 1 second delay */
-uint32_t task_delay = 1;
+
+/* Variables */
+
+static SemaphoreHandle_t m_semaphore;
+
+volatile uint8_t v_rxByte;
+
+
+/* Functions */
+
+void UART0_IRQHandler(void)
+{
+    uint8_t rxByte;
+
+    switch(DL_UART_Main_getPendingInterrupt(UART_TEST_INST))
+    {            
+        case DL_UART_IIDX_RX:
+            while(DL_UART_receiveDataCheck(UART_TEST_INST, &rxByte))
+            {
+                // Unloaded a byte.
+                v_rxByte = rxByte;
+            }
+
+            // Signal the task to transmit.
+            xSemaphoreGiveFromISR(m_semaphore, &(BaseType_t) {});
+            break;
+
+        default:
+            break;
+    }
+}
 
 void *Thread(void *arg0)
 {
-    for (;;) {
-        DL_GPIO_togglePins(GPIO_LEDS_PORT, GPIO_LEDS_USER_LED_1_PIN);
-        sleep(task_delay);
+    // Initialize semaphore to signal transmit operation.
+    m_semaphore = xSemaphoreCreateBinary();
+
+    /*
+     * Reconfigure UART.
+     */
+    DL_UART_Main_disable(UART_TEST_INST);
+
+    DL_UART_clearInterruptStatus(UART_TEST_INST, -1);
+
+    // Enable UART interrupt in the NVIC.
+    HwiP_clearInterrupt(UART_TEST_INST_INT_IRQN);
+    HwiP_enableInterrupt(UART_TEST_INST_INT_IRQN);
+
+    /*
+     * End UART reconfiguration.
+     */
+    DL_UART_Main_enable(UART_TEST_INST);
+
+    while(1)
+    {
+        // Wait for rx timeout.
+        xSemaphoreTake(m_semaphore, portMAX_DELAY);
+
+        // Transmit a character.
+        DL_UART_transmitDataBlocking(UART_TEST_INST, '$');
     }
 }
