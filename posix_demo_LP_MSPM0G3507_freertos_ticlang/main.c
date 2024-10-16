@@ -46,7 +46,7 @@
 /* TI includes for driver configuration */
 #include "ti_msp_dl_config.h"
 
-extern void *Thread(void *arg0);
+extern void UARTtask(void *arg0);
 
 /* Stack size in bytes */
 #define THREADSTACKSIZE 1024
@@ -69,25 +69,12 @@ int main(void)
     /* Prepare the hardware to run this demo. */
     prvSetupHardware();
 
-    /* Initialize the attributes structure with default values */
-    pthread_attr_init(&attrs);
-
-    /* Set priority, detach state, and stack size attributes */
-    priParam.sched_priority = configMAX_PRIORITIES - 1;
-    retc                    = pthread_attr_setschedparam(&attrs, &priParam);
-    retc |= pthread_attr_setdetachstate(&attrs, PTHREAD_CREATE_DETACHED);
-    retc |= pthread_attr_setstacksize(&attrs, THREADSTACKSIZE);
-    if (retc != 0) {
-        /* failed to set attributes */
-        while (1) {
-        }
-    }
-
-    retc = pthread_create(&thread, &attrs, Thread, NULL);
-    if (retc != 0) {
-        /* pthread_create() failed */
-        while (1) {
-        }
+    /* Create FreeRTOS task. */
+    if(xTaskCreate(UARTtask, "uart", 128, NULL, configMAX_PRIORITIES - 1,
+            &(TaskHandle_t) {}) != pdPASS)
+    {
+        // Unexpected error.
+        while(1);
     }
 
     /* Start the FreeRTOS scheduler */

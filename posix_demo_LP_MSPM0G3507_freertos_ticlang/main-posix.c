@@ -40,10 +40,10 @@
 /* Standard includes */
 #include <stdio.h>
 
-// RTOS header files
+/* RTOS header files */
 #include <FreeRTOS.h>
 #include <portmacro.h>
-#include <semphr.h>
+#include <task.h>
 
 /* TI includes for driver configuration */
 #include "ti_msp_dl_config.h"
@@ -52,7 +52,7 @@
 
 /* Variables */
 
-static SemaphoreHandle_t m_semaphore;
+static TaskHandle_t m_task;
 
 volatile uint8_t v_rxByte;
 
@@ -73,7 +73,7 @@ void UART0_IRQHandler(void)
             }
 
             // Signal the task to transmit.
-            xSemaphoreGiveFromISR(m_semaphore, &(BaseType_t) {});
+            xTaskNotifyFromISR(m_task, 1, eSetBits, &(BaseType_t) {});
             break;
 
         default:
@@ -81,10 +81,10 @@ void UART0_IRQHandler(void)
     }
 }
 
-void *Thread(void *arg0)
+void UARTtask(void *arg0)
 {
-    // Initialize semaphore to signal transmit operation.
-    m_semaphore = xSemaphoreCreateBinary();
+    // Get this task's handle.
+    m_task = xTaskGetCurrentTaskHandle();
 
     /*
      * Reconfigure UART.
@@ -105,7 +105,8 @@ void *Thread(void *arg0)
     while(1)
     {
         // Wait for rx timeout.
-        xSemaphoreTake(m_semaphore, portMAX_DELAY);
+        while(xTaskNotifyWait(0, -1, &(uint32_t) {}, portMAX_DELAY)
+                == pdFAIL);
 
         // Transmit a character.
         DL_UART_transmitDataBlocking(UART_TEST_INST, '$');
